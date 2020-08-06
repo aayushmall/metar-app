@@ -19,9 +19,7 @@ module.exports = class MetarController {
       }
       stationCode = stationCode.toUpperCase();
 
-      const rawInfo = await util.getStationInfo(stationCode);
-
-      res.locals.data = util.parseStationInfo(rawInfo, stationCode);
+      res.locals.data = await util.getStationInfo(stationCode, parseInt(req.query.nocache));
       next();
     } catch (error) {
       next(error);

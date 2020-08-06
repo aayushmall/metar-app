@@ -20,3 +20,31 @@ if (config.REDIS_HOST) {
     console.log(error);
   });
 }
+
+const setTtl = (key, ttl) => {
+  if (!client) return;
+
+  const expireAsync = promisify(client.expire).bind(client);
+  return expireAsync(key, ttl);
+};
+
+const set = (key, value) => {
+  if (!client) return;
+
+  const setAsync = promisify(client.set).bind(client);
+  return setAsync(key, value);
+};
+
+const get = (key) => {
+  if (!client) return;
+
+  const getAsync = promisify(client.get).bind(client);
+  return getAsync(key);
+};
+
+module.exports = {
+  set,
+  setTtl,
+  get
+};
+

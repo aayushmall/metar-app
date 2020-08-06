@@ -4,16 +4,36 @@ const cacheHelper = require('./cacheHelper');
 
 const util = {
 
-  getStationInfo: async (stationCode) => {
-    stationCode = `${stationCode.toUpperCase()}.TXT`;
-    let result = '';
-    const response = await util.sendRequest(`${config.METAR_INFO_URL}${stationCode}`, 'GET');
+  getStationInfo: async (stationCode, noCache) => {
+    let result;
+    stationCode = `${stationCode.toUpperCase()}`;
+
+    if (noCache !== 1) {
+      result = await cacheHelper.get(stationCode);
+      result = JSON.parse(result);
+    }
+
+    if (!result) {
+      result = util.getLiveStationInfo(stationCode);
+    }
+
+    return result;
+  },
+
+  getLiveStationInfo: async (stationCode) => {
+    stationCode = `${stationCode.toUpperCase()}`;
+    let rawInfo = '';
+    const response = await util.sendRequest(`${config.METAR_INFO_URL}${stationCode}.TXT`, 'GET');
 
     if (response.status === 404) {
       throw 'Invalid Station Code';
     } else if (response.status === 200) {
-      result = await response.text();
+      rawInfo = await response.text();
     }
+
+    const result = util.parseStationInfo(rawInfo, stationCode);
+    await cacheHelper.set(stationCode, JSON.stringify(result));
+    await cacheHelper.setTtl(stationCode, 300);
 
     return result;
   },
