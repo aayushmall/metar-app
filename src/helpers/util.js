@@ -91,7 +91,7 @@ const util = {
   },
 
   knotsToMiles: (speedInKnots) => {
-    return parseInt(speedInKnots) * 1.15078;
+    return (parseInt(speedInKnots) * 1.15078).toFixed(4);
   },
 
   sendRequest: async (endPoint, methodType, params) => {
