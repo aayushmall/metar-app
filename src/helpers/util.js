@@ -5,19 +5,21 @@ const cacheHelper = require('./cacheHelper');
 const util = {
 
   getStationInfo: async (stationCode, noCache) => {
-    let result;
+    let rawInfo;
     stationCode = `${stationCode.toUpperCase()}`;
 
+    // Checking cache for the data
     if (noCache !== 1) {
-      result = await cacheHelper.get(stationCode);
-      result = JSON.parse(result);
+      rawInfo = await cacheHelper.get(stationCode);
     }
 
-    if (!result) {
-      result = util.getLiveStationInfo(stationCode);
+    // Fetching live data for the station
+    if (!rawInfo) {
+      rawInfo = await util.getLiveStationInfo(stationCode);
     }
 
-    return result;
+    // Processor function to process the raw station data
+    return util.parseStationInfo(rawInfo, stationCode);
   },
 
   getLiveStationInfo: async (stationCode) => {
@@ -31,20 +33,25 @@ const util = {
       rawInfo = await response.text();
     }
 
-    const result = util.parseStationInfo(rawInfo, stationCode);
-    await cacheHelper.set(stationCode, JSON.stringify(result));
+    // Updating the cache layer redis with the live data and setting its expiry for 300 seconds
+    await cacheHelper.set(stationCode, rawInfo);
     await cacheHelper.setTtl(stationCode, 300);
 
-    return result;
+    return rawInfo;
   },
 
   parseStationInfo: (rawInfo, station) => {
     station = station.toUpperCase();
-    const data = { station };
+    let data = { station };
+
+    if (typeof rawInfo !== 'string') {
+      throw 'Invalid Station Data';
+    }
 
     const infoArr = rawInfo.split('\n');
     data.last_observation_at = util.getUtcDateString(infoArr[0]);
     data.wind = util.getWindDirectionAndSpeed(infoArr[1]);
+    data = { ...data, ...util.getTemperatureAndDewPoint(infoArr[1]) };
 
     return data;
   },
@@ -57,6 +64,32 @@ const util = {
     const { speed, gust } = util.getSpeed(directionAndSpeed.substring(3));
 
     return { direction, speed, gust };
+  },
+
+  getUtcDateString: (rawDate) => {
+    rawDate = rawDate.split(' ');
+    const dateOnly = rawDate[0].split('/');
+    const timeOnly = rawDate[1].split(':');
+    return new Date(Date.UTC(dateOnly[0], dateOnly[1], dateOnly[2], timeOnly[0], timeOnly[1]));
+  },
+
+  getTemperatureAndDewPoint: (rawInfo) => {
+    const raw = rawInfo.split(' ');
+    const data = { temperature: '', dew_point: {} };
+
+    for (const element of raw) {
+      const matches = element.match(/^(M?\d+)\/(M?\d+)$/);
+      if (matches) {
+        data.temperature = matches[1].replace('M', '-');
+        data.dew_point = matches[2].replace('M', '-');
+
+        data.temperature = `${data.temperature}\u00B0 C (${util.convertCelsiusToFahrenheit(data.temperature)})`;
+        data.dew_point = `${data.dew_point}\u00B0 C (${util.convertCelsiusToFahrenheit(data.dew_point)})`;
+        break;
+      }
+    }
+
+    return data;
   },
 
   getSpeed: (rawSpeed) => {
@@ -83,15 +116,12 @@ const util = {
     return directions[Math.round(((degree %= 360) < 0 ? degree + 360 : degree) / 45) % 8];
   },
 
-  getUtcDateString: (rawDate) => {
-    rawDate = rawDate.split(' ');
-    const dateOnly = rawDate[0].split('/');
-    const timeOnly = rawDate[1].split(':');
-    return new Date(Date.UTC(dateOnly[0], dateOnly[1], dateOnly[2], timeOnly[0], timeOnly[1]));
-  },
-
   knotsToMiles: (speedInKnots) => {
     return (parseInt(speedInKnots) * 1.15078).toFixed(4);
+  },
+
+  convertCelsiusToFahrenheit: (celsius) => {
+    return (Number(celsius) * 1.8 + 32).toFixed(2);
   },
 
   sendRequest: async (endPoint, methodType, params) => {
